@@ -1,0 +1,9 @@
+Cython==0.20.1
+PyYAML==3.11
+cssselect==0.9.1
+gevent==1.0.1
+greenlet==0.4.2
+lxml==3.3.5
+pyquery==1.2.8
+requests==2.3.0
+wsgiref==0.1.2

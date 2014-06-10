@@ -1,0 +1,6 @@
+.DS_cache
+*.py[cod]
+
+.cache
+.since
+cfg.yml

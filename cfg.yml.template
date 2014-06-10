@@ -1,0 +1,16 @@
+api:
+  consumer:
+  redirect:
+
+credentials:
+  user:
+  pass:
+
+kindle:
+  email:
+
+smtp:
+  host:
+  port: 25
+  user:
+  pass:
