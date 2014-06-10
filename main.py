@@ -5,15 +5,22 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json
+import logging as log
 import os
+import platform
 import re
 import smtplib
+import time
 from urlparse import parse_qs
 
 import gevent
+import humanize
 from pyquery import PyQuery as pq
 import requests
 import yaml
+
+
+log.basicConfig(level='INFO')
 
 CFG = yaml.load(open('cfg.yml', 'r'))
 TEMPLATE = u"""\
@@ -35,7 +42,10 @@ def write(filename, text):
         f.write(text)
 
 def download(url, filename):
-    write(filename, requests.get(url).content)
+    try:
+        write(filename, requests.get(url).content)
+    except requests.HTTPError:
+        log.error('Failed to download: %s', url)
 
 def send(to, subject, body, attachments=()):
     author = 'kindler@textnot.es'
@@ -119,45 +129,58 @@ def fetch(s, access_token):
 
 def main():
     s, access_token = auth()
-    response = fetch(s, access_token)
-    if not os.path.isdir('.cache'):
-        os.makedirs('.cache')
 
-    for item_id in response['list']:
-        url = 'http://getpocket.com/a/read/%s' % item_id
-        readbody = s.get(url).text
+    while True:
+        response = fetch(s, access_token)
+        if not os.path.isdir('.cache'):
+            os.makedirs('.cache')
 
-        check = re.search(r"var formCheck = '(.+)'", readbody).group(1)
-        data = {
-            'itemId': item_id,
-            'formCheck': check,
-        }
-        r = s.post('http://getpocket.com/a/x/getArticle.php', data=data)
-        article = r.json()['article']
-        d = pq(article['article'])
-        imgs = article['images']
-        imgurls = []
-        for imgdiv in d('.RIL_IMG'):
-            imgid = unicode(imgdiv.get('id')[8:])
-            img = imgs[imgid]
-            ext = os.path.splitext(img['src'])[1]
-            encoded = '%s%s' % (base64.b64encode(img['src']), ext)
-            cached = os.path.join('.cache', encoded)
-            imgurls.append((img['src'], cached))
-            pq(imgdiv).append(pq('<img width="100%"/>').attr('src', encoded))
+        for item_id in response['list']:
+            url = 'http://getpocket.com/a/read/%s' % item_id
+            readbody = s.get(url).text
 
-        # Fetch all the image files in parallel via gevent.
-        gs = [gevent.spawn(download, src, cached) for (src, cached) in imgurls]
-        gevent.joinall(gs)
+            check = re.search(r"var formCheck = '(.+)'", readbody).group(1)
+            data = {
+                'itemId': item_id,
+                'formCheck': check,
+            }
+            r = s.post('http://getpocket.com/a/x/getArticle.php', data=data)
+            article = r.json()['article']
+            d = pq(article['article'])
+            imgs = article['images']
+            imgurls = []
+            for imgdiv in d('.RIL_IMG'):
+                imgid = unicode(imgdiv.get('id')[8:])
+                img = imgs[imgid]
+                ext = os.path.splitext(img['src'])[1]
+                coded = '%s%s' % (base64.b64encode(img['src']), ext)
+                cached = os.path.join('.cache', coded)
+                imgurls.append((img['src'], cached))
+                pq(imgdiv).append(pq('<img width="100%"/>').attr('src', coded))
 
-        htmlfile = '%s.html' % item_id
-        html = TEMPLATE % (article['title'], d.html())
-        htmlpath = os.path.join('.cache', htmlfile)
-        write(htmlpath, html.encode('ascii', 'xmlcharrefreplace'))
+            # Fetch all the image files in parallel via gevent.
+            gs = [gevent.spawn(download, src, out) for (src, out) in imgurls]
+            gevent.joinall(gs)
 
-        os.system('./kindlegen "%s"' % htmlpath)
-        #send('adam@adamia.com', article['title'], d.html())
-        break
+            htmlfile = '%s.html' % item_id
+            html = TEMPLATE % (article['title'], d.html())
+            htmlpath = os.path.join('.cache', htmlfile)
+            write(htmlpath, html.encode('ascii', 'xmlcharrefreplace'))
+
+            bindir = platform.system().lower()
+            binpath = os.path.join('bin', bindir, 'kindlegen')
+            os.system('%s "%s" > /dev/null' % (binpath, htmlpath))
+
+            mobipath = os.path.join('.cache', '%s.mobi' % item_id)
+            to = CFG['kindle']['email']
+            body = 'Your Pocket article has been attached to this email.'
+            mobidata = read(mobipath)
+            send(to, article['title'], body, [mobidata])
+
+            size = humanize.naturalsize(len(mobidata))
+            log.info('Sent article "%s" (%s).', article['title'], size)
+
+        time.sleep(30.0)
 
 if __name__ == '__main__':
     main()
