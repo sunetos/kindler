@@ -1,3 +1,4 @@
 #!/bin/sh
 
-python main.py
+workon kindler
+killall kindler; nohup ./main.py &

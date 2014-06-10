@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from gevent import monkey; monkey.patch_all()
 
 import base64
@@ -17,6 +19,7 @@ import gevent
 import humanize
 from pyquery import PyQuery as pq
 import requests
+from setproctitle import setproctitle
 import yaml
 
 
@@ -183,4 +186,5 @@ def main():
         time.sleep(30.0)
 
 if __name__ == '__main__':
+    setproctitle('kindler')
     main()
