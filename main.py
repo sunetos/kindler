@@ -28,7 +28,14 @@ log.basicConfig(level='INFO')
 CFG = yaml.load(open('cfg.yml', 'r'))
 TEMPLATE = u"""\
 <html>
-<head><title>%s</title></head>
+<head>
+    <title>%s</title>
+    <style>
+        p, ul, ol, li, body { text-align: left; }
+        .RIL_IMG { text-align: center; }
+        img { display: inline-block; max-width: 100%%; vertical-align: center; }
+    </style>
+</head>
 <body>
 %s
 </body>
@@ -133,6 +140,31 @@ def fetch(s, access_token):
     write('.since', str(response['since']))
     return response
 
+def insert_imgs(d, imgs):
+    imgurls = []
+    for imgdiv in d('.RIL_IMG'):
+        imgid = unicode(imgdiv.get('id')[8:])
+        pq(imgdiv).append(pq('<img/>').attr('src', imgs[imgid]['src']))
+
+    for imgel in d('img'):
+        src = imgel.get('src')
+        ext = os.path.splitext(urlparse(src).path)[1]
+        if ext == '.php': ext = '.png'
+        coded = '%s%s' % (encode_url(src), ext)
+        cached = os.path.join('.cache', coded)
+        imgurls.append((src, cached))
+        pq(imgel).attr('src', coded)
+
+    return imgurls
+
+def replace_links(d, url):
+    for a in d('a'):
+        if not a.get('href').startswith(url + '#'):
+            uel = pq('<u/>').text(a.text)
+            suba = pq('<a>&uarr;</a>').attr('href', a.get('href'))
+            uel.append(suba).insert_before(pq(a))
+        pq(a).remove()
+
 def main():
     s, access_token = auth()
 
@@ -153,22 +185,8 @@ def main():
             r = s.post('http://getpocket.com/a/x/getArticle.php', data=data)
             article = r.json()['article']
             d = pq(article['article'])
-            imgs = article['images']
-            imgurls = []
-            for imgdiv in d('.RIL_IMG'):
-                imgid = unicode(imgdiv.get('id')[8:])
-                img = imgs[imgid]
-                ext = os.path.splitext(urlparse(img['src']).path)[1]
-                coded = '%s%s' % (encode_url(img['src']), ext)
-                cached = os.path.join('.cache', coded)
-                imgurls.append((img['src'], cached))
-                pq(imgdiv).append(pq('<img width="100%"/>').attr('src', coded))
-
-            for a in d('a'):
-                uel = pq('<u/>').text(a.text)
-                suba = pq('<a>&uarr;&uarr;</a>').attr('href', a.get('href'))
-                uel.append(suba).insert_before(pq(a))
-                pq(a).remove()
+            imgurls = insert_imgs(d, article['images'])
+            replace_links(d, article['resolvedUrl'])
 
             # Fetch all the image files in parallel via gevent.
             gs = [gevent.spawn(download, src, out) for (src, out) in imgurls]
