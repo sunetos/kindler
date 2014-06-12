@@ -161,8 +161,11 @@ def main():
                 imgurls.append((img['src'], cached))
                 pq(imgdiv).append(pq('<img width="100%"/>').attr('src', coded))
 
-            for anchor in d('a'):
-                pq(anchor).replace_with(pq('<span/>').text(anchor.text))
+            for a in d('a'):
+                uel = pq('<u/>').text(a.text)
+                suba = pq('<a>&uarr;&uarr;</a>').attr('href', a.get('href'))
+                uel.append(suba).insert_before(pq(anchor))
+                pq(anchor).remove()
 
             # Fetch all the image files in parallel via gevent.
             gs = [gevent.spawn(download, src, out) for (src, out) in imgurls]
