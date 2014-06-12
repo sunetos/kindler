@@ -13,7 +13,7 @@ import platform
 import re
 import smtplib
 import time
-from urlparse import parse_qs
+from urlparse import parse_qs, urlparse
 
 import gevent
 import humanize
@@ -49,6 +49,9 @@ def download(url, filename):
         write(filename, requests.get(url).content)
     except requests.HTTPError:
         log.error('Failed to download: %s', url)
+
+def encode_url(url):
+    return base64.b64encode(url).replace('/', '_')
 
 def send(to, subject, body, attachments=()):
     author = 'kindler@textnot.es'
@@ -155,8 +158,8 @@ def main():
             for imgdiv in d('.RIL_IMG'):
                 imgid = unicode(imgdiv.get('id')[8:])
                 img = imgs[imgid]
-                ext = os.path.splitext(img['src'])[1]
-                coded = '%s%s' % (base64.b64encode(img['src']), ext)
+                ext = os.path.splitext(urlparse(img['src']).path)[1]
+                coded = '%s%s' % (encode_url(img['src']), ext)
                 cached = os.path.join('.cache', coded)
                 imgurls.append((img['src'], cached))
                 pq(imgdiv).append(pq('<img width="100%"/>').attr('src', coded))
@@ -164,8 +167,8 @@ def main():
             for a in d('a'):
                 uel = pq('<u/>').text(a.text)
                 suba = pq('<a>&uarr;&uarr;</a>').attr('href', a.get('href'))
-                uel.append(suba).insert_before(pq(anchor))
-                pq(anchor).remove()
+                uel.append(suba).insert_before(pq(a))
+                pq(a).remove()
 
             # Fetch all the image files in parallel via gevent.
             gs = [gevent.spawn(download, src, out) for (src, out) in imgurls]
