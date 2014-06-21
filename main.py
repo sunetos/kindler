@@ -159,7 +159,7 @@ def insert_imgs(d, imgs):
 
 def replace_links(d, url):
     for a in d('a'):
-        if not a.get('href').startswith(url + '#'):
+        if not (a.get('href') or '').startswith(url + '#'):
             uel = pq('<u/>').text(a.text)
             suba = pq('<a>&uarr;</a>').attr('href', a.get('href'))
             uel.append(suba).insert_before(pq(a))
@@ -169,7 +169,12 @@ def main():
     s, access_token = auth()
 
     while True:
-        response = fetch(s, access_token)
+        try:
+            response = fetch(s, access_token)
+        except requests.HTTPError:
+            time.sleep(30.0)
+            continue
+
         if not os.path.isdir('.cache'):
             os.makedirs('.cache')
 
