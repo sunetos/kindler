@@ -6,6 +6,7 @@ import base64
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+import hashlib
 import json
 import logging as log
 import os
@@ -41,6 +42,9 @@ TEMPLATE = u"""\
 </body>
 </html>
 """
+
+def hash(text):
+    return hashlib.sha1(text).hexdigest()
 
 def read(filename):
     if not os.path.isfile(filename): return False
@@ -80,7 +84,7 @@ def send(to, subject, body, attachments=()):
     server.sendmail(author, (to,), msg.as_string())
     server.quit()
 
-def auth():
+def auth(user):
     s = requests.Session()
 
     data = {
@@ -107,8 +111,8 @@ def auth():
 
     d = pq(r.text)
     data = {
-        'feed_id': CFG['credentials']['user'],
-        'password': CFG['credentials']['pass'],
+        'feed_id': user['pocket']['user'],
+        'password': user['pocket']['pass'],
         'form_check': d('input[name="form_check"]').val(),
         'source': d('input[name="source"]').val(),
         'route': d('input[name="route"]').val(),
@@ -123,7 +127,7 @@ def auth():
     access_token = parse_qs(r.text)['access_token'][0]
     return s, access_token
 
-def fetch(s, access_token):
+def fetch(userid, s, access_token):
     data = {
         'consumer_key': CFG['api']['consumer'],
         'access_token': access_token,
@@ -132,12 +136,13 @@ def fetch(s, access_token):
         'detailType': 'complete',
         'sort': 'oldest',
     }
-    since = read('.since')
+    sincepath = os.path.join('.since', userid)
+    since = read(sincepath)
     if since: data['since'] = since
     r = s.post('https://getpocket.com/v3/get', data=data)
 
     response = r.json()
-    write('.since', str(response['since']))
+    write(sincepath, str(response['since']))
     return response
 
 def insert_imgs(d, imgs):
@@ -165,18 +170,16 @@ def replace_links(d, url):
             uel.append(suba).insert_before(pq(a))
         pq(a).remove()
 
-def main():
-    s, access_token = auth()
+def run(user):
+    userid = hash(user['pocket']['user'])
+    s, access_token = auth(user)
 
     while True:
         try:
-            response = fetch(s, access_token)
+            response = fetch(userid, s, access_token)
         except requests.HTTPError:
             time.sleep(30.0)
             continue
-
-        if not os.path.isdir('.cache'):
-            os.makedirs('.cache')
 
         for item_id in response['list']:
             url = 'http://getpocket.com/a/read/%s' % item_id
@@ -207,7 +210,7 @@ def main():
             os.system('%s "%s" > /dev/null' % (binpath, htmlpath))
 
             mobipath = os.path.join('.cache', '%s.mobi' % item_id)
-            to = CFG['kindle']['email']
+            to = user['kindle']['email']
             body = 'Your Pocket article has been attached to this email.'
             mobidata = read(mobipath)
             send(to, article['title'], body, [mobidata])
@@ -216,6 +219,12 @@ def main():
             log.info('Sent article "%s" (%s).', article['title'], size)
 
         time.sleep(30.0)
+
+def main():
+    if not os.path.isdir('.cache'): os.makedirs('.cache')
+    if not os.path.isdir('.since'): os.makedirs('.since')
+    gs = [gevent.spawn(run, user) for user in CFG['users']]
+    gevent.joinall(gs)
 
 if __name__ == '__main__':
     setproctitle('kindler')

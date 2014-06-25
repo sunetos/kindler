@@ -2,12 +2,12 @@ api:
   consumer:
   redirect:
 
-credentials:
-  user:
-  pass:
-
-kindle:
-  email:
+users:
+- pocket:
+    user:
+    pass:
+  kindle:
+    email:
 
 smtp:
   host:
